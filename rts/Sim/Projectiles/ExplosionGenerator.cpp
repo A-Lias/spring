@@ -42,7 +42,6 @@
 static DynMemPool<sizeof(CCustomExplosionGenerator)> egMemPool;
 
 alignas(LuaParser) static std::byte exploParserMem[sizeof(LuaParser)];
-alignas(LuaParser) static std::byte aliasParserMem[sizeof(LuaParser)];
 alignas(LuaTable) static std::byte explTblRootMem[sizeof(LuaTable )];
 
 static constexpr size_t CEG_PREFIX_STRLEN = sizeof(CEG_PREFIX_STRING) - 1;
@@ -51,9 +50,9 @@ CExplosionGeneratorHandler explGenHandler;
 
 
 
-unsigned int CCustomExplosionGenerator::GetFlagsFromTable(const LuaTable& table)
+uint32_t CCustomExplosionGenerator::GetFlagsFromTable(const LuaTable& table)
 {
-	unsigned int flags = 0;
+	uint32_t flags = 0;
 
 	flags |= (CEG_SPWF_GROUND     * table.GetBool(    "ground", false));
 	flags |= (CEG_SPWF_WATER      * table.GetBool(    "water" , false));
@@ -67,12 +66,12 @@ unsigned int CCustomExplosionGenerator::GetFlagsFromTable(const LuaTable& table)
 	return flags;
 }
 
-unsigned int CCustomExplosionGenerator::GetFlagsFromHeight(float height, float groundHeight)
+uint32_t CCustomExplosionGenerator::GetFlagsFromHeight(float height, float groundHeight)
 {
-	unsigned int flags = 0;
+	uint32_t flags = 0;
 
-	const unsigned int voidGroundMask = 1 - mapRendering->voidGround;
-	const unsigned int voidWaterMask  = 1 - mapRendering->voidWater ;
+	const uint32_t voidGroundMask = 1 - mapRendering->voidGround;
+	const uint32_t voidWaterMask  = 1 - mapRendering->voidWater ;
 
 	const float waterDistance = math::fabsf(height);
 	const float exploAltitude = height - groundHeight;
@@ -110,47 +109,6 @@ unsigned int CCustomExplosionGenerator::GetFlagsFromHeight(float height, float g
 }
 
 
-
-void ClassAliasList::Load(const LuaTable& aliasTable)
-{
-	decltype(aliases) aliasList;
-	aliasTable.GetMap(aliasList);
-	aliases.insert(aliasList.begin(), aliasList.end());
-}
-
-
-std::string ClassAliasList::ResolveAlias(const std::string& name) const
-{
-	std::string n = name;
-
-	for (;;) {
-		const auto i = aliases.find(n);
-
-		if (i == aliases.end())
-			break;
-
-		n = i->second;
-	}
-
-	return n;
-}
-
-
-std::string ClassAliasList::FindAlias(const std::string& className) const
-{
-	for (const auto& p: aliases) {
-		if (p.second == className)
-			return p.first;
-	}
-
-	return className;
-}
-
-
-
-
-
-
 void CExplosionGeneratorHandler::Init()
 {
 	egMemPool.clear();
@@ -165,7 +123,6 @@ void CExplosionGeneratorHandler::Init()
 
 
 	exploParser = nullptr;
-	aliasParser = nullptr;
 	explTblRoot = nullptr;
 
 	ParseExplosionTables();
@@ -174,11 +131,9 @@ void CExplosionGeneratorHandler::Init()
 void CExplosionGeneratorHandler::Kill()
 {
 	spring::SafeDestruct(exploParser);
-	spring::SafeDestruct(aliasParser);
 	spring::SafeDestruct(explTblRoot);
 
 	std::memset(exploParserMem, 0, sizeof(exploParserMem));
-	std::memset(aliasParserMem, 0, sizeof(aliasParserMem));
 	std::memset(explTblRootMem, 0, sizeof(explTblRootMem));
 
 	for (IExplosionGenerator*& eg: explosionGenerators) {
@@ -197,21 +152,10 @@ void CExplosionGeneratorHandler::ParseExplosionTables()
 	static_assert(sizeof(LuaTable ) <= sizeof(explTblRootMem), "");
 
 	spring::SafeDestruct(exploParser);
-	spring::SafeDestruct(aliasParser);
 	spring::SafeDestruct(explTblRoot);
 
 	exploParser = new (exploParserMem) LuaParser("gamedata/explosions.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
-	aliasParser = new (aliasParserMem) LuaParser("gamedata/explosion_alias.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
 	explTblRoot = nullptr;
-
-	if (!aliasParser->Execute()) {
-		LOG_L(L_ERROR, "[%s] failed to parse explosion aliases: %s", __func__, (aliasParser->GetErrorLog()).c_str());
-	} else {
-		const LuaTable& aliasRoot = aliasParser->GetRoot();
-
-		projectileClasses.Clear();
-		projectileClasses.Load(aliasRoot.SubTable("projectiles"));
-	}
 
 	if (!exploParser->Execute()) {
 		LOG_L(L_ERROR, "[%s] failed to parse explosions: %s", __func__, (exploParser->GetErrorLog()).c_str());
@@ -248,7 +192,7 @@ void CExplosionGeneratorHandler::ReloadGenerators(const std::string& tag) {
 		return;
 	}
 
-	for (unsigned int n = 1; n < explosionGenerators.size(); n++) {
+	for (uint32_t n = 1; n < explosionGenerators.size(); n++) {
 		IExplosionGenerator* eg = explosionGenerators[n];
 
 		// standard EG's (empty postfix) do not need to be reloaded
@@ -267,7 +211,7 @@ void CExplosionGeneratorHandler::ReloadGenerators(const std::string& tag) {
 
 
 
-unsigned int CExplosionGeneratorHandler::LoadGeneratorID(const char* tag, const char* pre)
+uint32_t CExplosionGeneratorHandler::LoadGeneratorID(const char* tag, const char* pre)
 {
 	IExplosionGenerator* eg = LoadGenerator(tag, pre);
 
@@ -331,7 +275,7 @@ IExplosionGenerator* CExplosionGeneratorHandler::LoadGenerator(const char* tag, 
 	return explGen;
 }
 
-IExplosionGenerator* CExplosionGeneratorHandler::GetGenerator(unsigned int expGenID)
+IExplosionGenerator* CExplosionGeneratorHandler::GetGenerator(uint32_t expGenID)
 {
 	if (expGenID == EXPGEN_ID_INVALID)
 		return nullptr;
@@ -343,7 +287,7 @@ IExplosionGenerator* CExplosionGeneratorHandler::GetGenerator(unsigned int expGe
 }
 
 bool CExplosionGeneratorHandler::GenExplosion(
-	unsigned int expGenID,
+	uint32_t expGenID,
 	const float3& pos,
 	const float3& dir,
 	float damage,
@@ -378,7 +322,7 @@ bool CStdExplosionGenerator::Explosion(
 
 	float3 camVect = camera->GetPos() - pos;
 
-	const unsigned int flags = CCustomExplosionGenerator::GetFlagsFromHeight(pos.y, groundHeight);
+	const uint32_t flags = CCustomExplosionGenerator::GetFlagsFromHeight(pos.y, groundHeight);
 	const bool    airExplosion = ((flags & CCustomExplosionGenerator::CEG_SPWF_AIR       ) != 0);
 	const bool groundExplosion = ((flags & CCustomExplosionGenerator::CEG_SPWF_GROUND    ) != 0);
 	const bool  waterExplosion = ((flags & CCustomExplosionGenerator::CEG_SPWF_WATER     ) != 0);
@@ -745,7 +689,7 @@ void CCustomExplosionGenerator::ParseExplosionCode(
 		SExpGenSpawnableMemberInfo subInfo = memberInfo;
 		subInfo.length = 1;
 
-		for (unsigned int i = 0; i < memberInfo.length && start < script.length(); ++i) {
+		for (uint32_t i = 0; i < memberInfo.length && start < script.length(); ++i) {
 			const string::size_type subEnd = script.find(',', start + 1);
 
 			ParseExplosionCode(psi, script.substr(start, subEnd - start), subInfo, code);
@@ -866,7 +810,7 @@ bool CCustomExplosionGenerator::Load(CExplosionGeneratorHandler* handler, const 
 	vector<string> spawns;
 	expTable.GetKeys(spawns);
 
-	for (unsigned int n = 0; n < spawns.size(); n++) {
+	for (uint32_t n = 0; n < spawns.size(); n++) {
 		ProjectileSpawnInfo psi;
 
 		const std::string& spawnName = spawns[n];
@@ -880,7 +824,7 @@ bool CCustomExplosionGenerator::Load(CExplosionGeneratorHandler* handler, const 
 		if (spawnName == "groundflash" || spawnName == "filename")
 			continue;
 
-		const string& className = handler->GetProjectileClasses().ResolveAlias(spawnTable.GetString("class", spawnName));
+		const string& className = spawnTable.GetString("class", spawnName);
 
 		if ((psi.spawnableID = CExpGenSpawnable::GetSpawnableID(className)) == -1u) {
 			LOG_L(L_WARNING, "[CCEG::%s] %s: unknown class \"%s\"", __func__, tag, className.c_str());
@@ -951,7 +895,7 @@ bool CCustomExplosionGenerator::Explosion(
 	CUnit* hit,
 	bool withMutex
 ) {
-	unsigned int flags = GetFlagsFromHeight(pos.y, CGround::GetHeightReal(pos.x, pos.z));
+	uint32_t flags = GetFlagsFromHeight(pos.y, CGround::GetHeightReal(pos.x, pos.z));
 
 	const bool   unitCollision = (hit != nullptr);
 	const bool groundExplosion = ((flags & CEG_SPWF_GROUND) != 0);
@@ -981,7 +925,7 @@ bool CCustomExplosionGenerator::Explosion(
 		if (projectileHandler.GetParticleSaturation() > 1.0f)
 			break;
 
-		for (unsigned int c = 0; c < psi.count; c++) {
+		for (uint32_t c = 0; c < psi.count; c++) {
 			CExpGenSpawnable* projectile = CExpGenSpawnable::CreateSpawnable(psi.spawnableID);
 			ExecuteExplosionCode(&psi.code[0], damage, (char*) projectile, c, dir);
 			projectile->Init(owner, pos);
@@ -1023,7 +967,6 @@ bool CCustomExplosionGenerator::OutputProjectileClassInfo()
 			std::cout << "," << std::endl;
 
 		std::cout << "  \"" << c->name << "\": {" << std::endl;
-		std::cout << "    \"alias\": \"" << (egh.GetProjectileClasses()).FindAlias(c->name) << "\"";
 		for (creg::Class* cb = c; cb; cb = cb->base()) {
 			for (creg::Class::Member& m: cb->members) {
 				if (m.flags & creg::CM_Config) {
