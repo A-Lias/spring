@@ -125,6 +125,7 @@ bool LuaSyncedRead::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(GetPlayerRulesParams);
 
 	REGISTER_LUA_CFUNC(GetMapOptions);
+	REGISTER_LUA_CFUNC(GetModOption);
 	REGISTER_LUA_CFUNC(GetModOptions);
 
 	REGISTER_LUA_CFUNC(GetTidal);
@@ -1277,6 +1278,38 @@ int LuaSyncedRead::GetMapOptions(lua_State* L)
 	}
 
 	return 1;
+}
+
+
+/***
+ *
+ * @function Spring.GetModOption
+ *
+ * @string modOption 
+ *
+ * @treturn nil|number|string value of modOption in option map
+ */
+int LuaSyncedRead::GetModOption(lua_State* L)
+{
+	const auto& modOpts = CGameSetup::GetModOptions();
+	
+	const std::string& opt = luaL_checkstring(L, 1);
+
+	if (modOpts.find(opt) == modOpts.end()) {
+		return 0;
+	} else {
+		std::visit ([L](auto&& value) {
+			using T = std::decay_t <decltype(value)>;
+			if constexpr (std::is_same_v <T, float>)
+				lua_pushnumber(L, value);
+			else if constexpr (std::is_same_v <T, bool>)
+				lua_pushboolean(L, value);
+			else if constexpr (std::is_same_v <T, std::string>)
+				lua_pushsstring(L, value);
+		}, modOpts.opt);
+		
+		return 1;
+	}
 }
 
 
